@@ -1,0 +1,9 @@
+[Core]
+Name = LLM
+Module = llm
+
+[Documentation]
+Description = Interact with LLM.
+
+[Version]
+Python = 3
