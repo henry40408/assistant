@@ -1,5 +1,5 @@
 import argparse
-import secrets
+import random
 from functools import lru_cache
 from typing import Dict, Generator, List, Mapping
 
@@ -84,16 +84,17 @@ class LinkdingPlugin(BotPlugin):
     def bookmarks_random(
         self, msg: Message, n: int, cached: bool, reset: bool
     ) -> Generator[str, None, None]:
-        bookmarks = self.get_cached_bookmarks(cached)
+        viewed_ids = self.get(KEY_VIEWED_IDS, [])
+        if reset:
+            viewed_ids.clear()
+        bookmarks = [
+            b for b in self.get_cached_bookmarks(cached) if b["id"] not in viewed_ids
+        ]
         if not bookmarks:
             yield "*empty*"
-        s = self.get(KEY_VIEWED_IDS, [])
-        if reset:
-            s.clear()
-        for _ in range(n):
-            bookmark = secrets.choice(
-                list(filter(lambda b: b["id"] not in s, bookmarks))
-            )
+            return
+        selected = random.sample(bookmarks, k=n)
+        ids = list(map(lambda b: b["id"], selected))
+        for bookmark in selected:
             yield f"* {bookmark['id']}: {bookmark['title']} {bookmark['url']}"
-            s.append(bookmark["id"])
-        self[KEY_VIEWED_IDS] = s
+        self[KEY_VIEWED_IDS] = viewed_ids + ids
