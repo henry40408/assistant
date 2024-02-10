@@ -1,0 +1,9 @@
+[Core]
+Name = Linkding
+Module = linkding
+
+[Documentation]
+Description = Interact with Linkding.
+
+[Version]
+Python = 3

@@ -6,6 +6,8 @@ from llama_index.llms import OpenAI
 
 
 class LLMPlugin(BotPlugin):
+    """Interact with LLM."""
+
     def get_configuration_template(self) -> Mapping:
         return {
             "OPENAI_API_KEY": None,
@@ -26,7 +28,7 @@ class LLMPlugin(BotPlugin):
         history_key = self.build_history_key(msg)
         chat_history = self.get(history_key, [])
         if not chat_history:
-            yield "(empty)"
+            yield "*empty*"
         else:
             for m in chat_history:
                 yield f"* {m}"
