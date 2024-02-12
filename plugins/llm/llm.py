@@ -1,12 +1,51 @@
 from functools import lru_cache
-from typing import List, Mapping, Match
+from typing import Mapping, Match
 
 from errbot import BotPlugin, Message, arg_botcmd, botcmd, re_botcmd
 from llama_index.agent import ReActAgent
 from llama_index.core.base_query_engine import BaseQueryEngine
-from llama_index.indices import DocumentSummaryIndex
+from llama_index.indices import DocumentSummaryIndex, VectorStoreIndex
 from llama_index.llms import OpenAI
 from llama_index.readers import SimpleWebPageReader
+from llama_index.tools import FunctionTool
+
+
+@lru_cache
+def summary_engine_from_url(url: str) -> BaseQueryEngine:
+    loader = SimpleWebPageReader(html_to_text=True)
+    documents = loader.load_data(urls=[url])
+    index = DocumentSummaryIndex.from_documents(documents)
+    return index.as_query_engine()
+
+
+@lru_cache
+def vector_engine_from_url(url: str) -> BaseQueryEngine:
+    loader = SimpleWebPageReader(html_to_text=True)
+    documents = loader.load_data(urls=[url])
+    index = VectorStoreIndex.from_documents(documents)
+    return index.as_query_engine()
+
+
+@lru_cache
+def summarize_tool(url: str) -> str:
+    """Useful to summarize a webpage with a URL."""
+    query_engine = summary_engine_from_url(url)
+    resp = query_engine.query("What's summary of this text collection?")
+    return str(resp)
+
+
+@lru_cache
+def rag_tool(url: str, question: str) -> str:
+    """Useful to answer a question from the webpage with a URL."""
+    query_engine = vector_engine_from_url(url)
+    resp = query_engine.query(question)
+    return str(resp)
+
+
+TOOLS = [
+    FunctionTool.from_defaults(fn=rag_tool),
+    FunctionTool.from_defaults(fn=summarize_tool),
+]
 
 
 class LLMPlugin(BotPlugin):
@@ -62,32 +101,10 @@ class LLMPlugin(BotPlugin):
         history_key = self.build_history_key(msg)
         chat_history = self.get(history_key, [])
         agent = ReActAgent.from_tools(
-            [],
+            tools=TOOLS,  # type:ignore
             llm=llm,
             chat_history=chat_history,
             verbose=True,
         )
         yield agent.chat(match[1]).response
         self[history_key] = agent.memory.get()
-
-    @lru_cache
-    @staticmethod
-    def get_query_engine(url: str) -> BaseQueryEngine:
-        loader = SimpleWebPageReader(html_to_text=True)
-        documents = loader.load_data(urls=[url])
-        index = DocumentSummaryIndex.from_documents(documents)
-        return index.as_query_engine()
-
-    @arg_botcmd(
-        "query",
-        type=str,
-        nargs="?",
-        help="Custom query on webpage",
-        default="What's summary of this text collection?",
-    )  # type:ignore
-    @arg_botcmd("url", type=str, help="URL")  # type:ignore
-    def summarize(self, msg: Message, url: str, query: str) -> str:
-        """Summarize webpage with a URL."""
-        query_engine = LLMPlugin.get_query_engine(url)
-        resp = query_engine.query(query)
-        return resp.response  # type:ignore
