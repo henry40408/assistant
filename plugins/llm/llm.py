@@ -1,51 +1,15 @@
-from functools import lru_cache
-from typing import Mapping, Match
+from typing import Generator, Mapping, Match, final
 
-from errbot import BotPlugin, Message, arg_botcmd, botcmd, re_botcmd
-from llama_index.agent import ReActAgent
-from llama_index.core.base_query_engine import BaseQueryEngine
-from llama_index.indices import DocumentSummaryIndex, VectorStoreIndex
-from llama_index.llms import OpenAI
-from llama_index.readers import SimpleWebPageReader
-from llama_index.tools import FunctionTool
+import emoji
+from errbot import BotPlugin, Message, botcmd, re_botcmd
+from simpleaichat import AIChat
+from simpleaichat.models import ChatMessage
 
 
-@lru_cache
-def summary_engine_from_url(url: str) -> BaseQueryEngine:
-    loader = SimpleWebPageReader(html_to_text=True)
-    documents = loader.load_data(urls=[url])
-    index = DocumentSummaryIndex.from_documents(documents)
-    return index.as_query_engine()
-
-
-@lru_cache
-def vector_engine_from_url(url: str) -> BaseQueryEngine:
-    loader = SimpleWebPageReader(html_to_text=True)
-    documents = loader.load_data(urls=[url])
-    index = VectorStoreIndex.from_documents(documents)
-    return index.as_query_engine()
-
-
-@lru_cache
-def summarize_tool(url: str) -> str:
-    """Useful to summarize a webpage with a URL."""
-    query_engine = summary_engine_from_url(url)
-    resp = query_engine.query("What's summary of this text collection?")
-    return str(resp)
-
-
-@lru_cache
-def rag_tool(url: str, question: str) -> str:
-    """Useful to answer a question from the webpage with a URL."""
-    query_engine = vector_engine_from_url(url)
-    resp = query_engine.query(question)
-    return str(resp)
-
-
-TOOLS = [
-    FunctionTool.from_defaults(fn=rag_tool),
-    FunctionTool.from_defaults(fn=summarize_tool),
-]
+class Emoji:
+    clock = emoji.emojize(":ten-thirty:")
+    robot = emoji.emojize(":robot:")
+    user = emoji.emojize(":bust_in_silhouette:")
 
 
 class LLMPlugin(BotPlugin):
@@ -66,45 +30,45 @@ class LLMPlugin(BotPlugin):
         return f"history {msg.frm}"
 
     @botcmd
-    def llm_history(self, msg: Message, args: str):
+    def llm_history(self, msg: Message, args: str) -> Generator[str, None, None]:
         """Retrieve chat history."""
         history_key = self.build_history_key(msg)
-        chat_history = self.get(history_key, [])
-        if not chat_history:
-            yield "*empty*"
+        if history_key in self:
+            final_usage = 0
+            for m in self[history_key]:
+                cm = ChatMessage.model_validate(m)
+                icon = Emoji.user if cm.role == "user" else Emoji.robot
+                yield f"* {icon} {cm.content} {Emoji.clock} {cm.received_at}"
+                if cm.role == "assistant" and cm.total_length:
+                    final_usage = cm.total_length
+            yield f"current usage: {final_usage} token(s)"
         else:
-            for m in chat_history:
-                yield f"* {m}"
+            yield "*empty*"
 
     @botcmd
-    def llm_history_clear(self, msg: Message, args: str):
+    def llm_history_clear(self, msg: Message, args: str) -> str:
         """Clear chat history."""
         history_key = self.build_history_key(msg)
         if history_key in self:
             del self[history_key]
-        return "Chat history cleared."
-
-    @arg_botcmd("n", type=int, help="How many messages should be removed.")  # type:ignore
-    def llm_history_pop(self, msg: Message, n: int):
-        """Remove last N messages from chat history."""
-        history_key = self.build_history_key(msg)
-        with self.mutable(history_key, []) as chat_history:
-            for _ in range(n):
-                if chat_history:
-                    yield f"Removed: {chat_history.pop()}"
+        return "History successfully cleared."
 
     @re_botcmd(pattern=r"^\.(.+)$", prefixed=False)  # type:ignore
     def chat(self, msg: Message, match: Match):
         """Chat with LLM."""
-        api_key = self.config["OPENAI_API_KEY"]
-        llm = OpenAI("gpt-4", api_key=api_key, temperature=0.0)
         history_key = self.build_history_key(msg)
-        chat_history = self.get(history_key, [])
-        agent = ReActAgent.from_tools(
-            tools=TOOLS,  # type:ignore
-            llm=llm,
-            chat_history=chat_history,
-            verbose=True,
+        api_key = self.config["OPENAI_API_KEY"]
+        params = {"temperature": 0.0}
+        ai = AIChat(
+            id=history_key,
+            api_key=api_key,
+            console=False,
+            model="gpt-4-0125-preview",
+            params=params,
         )
-        yield agent.chat(match[1]).response
-        self[history_key] = agent.memory.get()
+        if history_key in self:
+            ai.sessions[history_key].messages = [
+                ChatMessage.model_validate(i) for i in self[history_key]
+            ]
+        yield ai(match[1])
+        self[history_key] = ai.get_session(id=history_key).messages

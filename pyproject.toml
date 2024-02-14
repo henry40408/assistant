@@ -9,8 +9,9 @@ readme = "README.md"
 python = "^3.11"
 
 errbot = "^6.2.0"
-llama-index = "~0.9.44"
 html2text = "^2020.1.16"
+simpleaichat = "^0.2.2"
+emoji = "^2.10.1"
 
 [tool.ruff.lint]
 select = ["I"]
