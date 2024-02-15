@@ -1,9 +1,10 @@
-from typing import Generator, Mapping, Match, final
+from typing import Any, Generator, Mapping, Match
 
 import emoji
 from errbot import BotPlugin, Message, botcmd, re_botcmd
 from simpleaichat import AIChat
 from simpleaichat.models import ChatMessage
+from toolset import MODEL, MODEL_PARAMS, Toolset
 
 
 class Emoji:
@@ -22,8 +23,7 @@ class LLMPlugin(BotPlugin):
 
     def activate(self) -> None:
         if not self.config:
-            self.log.warn("OpenAI API key is required")
-            return
+            raise Exception("OPENAI_API_KEY is required")
         return super().activate()
 
     def build_history_key(self, msg: Message):
@@ -58,17 +58,18 @@ class LLMPlugin(BotPlugin):
         """Chat with LLM."""
         history_key = self.build_history_key(msg)
         api_key = self.config["OPENAI_API_KEY"]
-        params = {"temperature": 0.0}
         ai = AIChat(
             id=history_key,
             api_key=api_key,
             console=False,
-            model="gpt-4-0125-preview",
-            params=params,
+            model=MODEL,
+            params=MODEL_PARAMS,
         )
+        toolset = Toolset(self.log, ai, api_key=api_key)
         if history_key in self:
             ai.sessions[history_key].messages = [
                 ChatMessage.model_validate(i) for i in self[history_key]
             ]
-        yield ai(match[1])
+        reply: Any = ai(match[1], tools=toolset.tools)
+        yield reply["response"]
         self[history_key] = ai.get_session(id=history_key).messages

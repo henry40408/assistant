@@ -9,9 +9,10 @@ readme = "README.md"
 python = "^3.11"
 
 errbot = "^6.2.0"
-html2text = "^2020.1.16"
 simpleaichat = "^0.2.2"
 emoji = "^2.10.1"
+beautifulsoup4 = "^4.12.3"
+trafilatura = "^1.7.0"
 
 [tool.ruff.lint]
 select = ["I"]

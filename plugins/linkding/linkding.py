@@ -26,8 +26,8 @@ class LinkdingPlugin(BotPlugin):
             raise ValidationException(f"{resp.status_code} {resp.text}")
 
     def activate(self) -> None:
-        if not self.config["TOKEN"] or not self.config["URL"]:
-            raise Exception("API key or URL is required.")
+        if not self.config:
+            raise Exception("API key and URL are required")
         return super().activate()
 
     @lru_cache
