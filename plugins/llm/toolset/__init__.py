@@ -1,4 +1,5 @@
 import logging
+import logging.config
 from logging import Logger
 from typing import Any, Dict, Optional
 
@@ -12,10 +13,10 @@ MODEL_PARAMS = {"temperature": 0.0}
 
 
 class Extracted(BaseModel):
-    """Extracted data"""
+    """Extracted information"""
 
     url: HttpUrl = Field(description="URL")
-    summary: str = Field(description="Summary")
+    summary: str = Field(description="Summary in 100 words")
 
 
 class Toolset:
@@ -29,9 +30,9 @@ class Toolset:
         self.tool_ai = AIChat(
             api_key=api_key,
             console=False,
-            model=sess.model,
-            params=sess.params,
-            save_messages=False,
+            model=sess.model,  # use the same model
+            params=sess.params,  # use the same parameters
+            save_messages=False,  # epheremal
         )
 
     def summarize_url(self, query: str) -> Dict[str, Any]:
@@ -44,10 +45,8 @@ class Toolset:
         URL:
         """
         extracted: Any = self.tool_ai(prompt, output_schema=Extracted)
-
-        url: str = extracted["url"]
+        url = extracted["url"]
         self.log.debug(f"URL: {url}")
-
         if not url:
             return {"context": f"Failed to extract URL from {query}"}
 
@@ -57,22 +56,30 @@ class Toolset:
             return {"context": f"Failed to fetch {url}"}
 
         doc = BeautifulSoup(str(downloaded), "html.parser")
-        sanitized = extract(downloaded)
-        self.log.debug(f"Sanitized content: {sanitized}")
+        content = extract(downloaded)
+        if not content:
+            return {"context": f"Content is empty: {url}"}
+
+        self.log.debug(f"First 100 characaters of extracted content: {content[:100]}")
 
         # Summarize webpage content
         prompt = f"""
-        Summarize the following text.
+        Summarize the following text:
         Text:
         ###
-        {sanitized}
+        {content}
         ###
         Summary:
         """
         extracted: Any = self.tool_ai(prompt, output_schema=Extracted)
+
         title = doc.title.string if doc.title and doc.title.string else ""
-        self.log.debug(f"summary: {extracted['summary']}")
-        return {"context": extracted["summary"], "title": title}
+        self.log.debug(f"Title: {title}")
+
+        summary = extracted["summary"]
+        self.log.debug(f"Summary: {summary}")
+
+        return {"context": summary, "title": title, "url": url}
 
     @property
     def tools(self):
@@ -81,8 +88,11 @@ class Toolset:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
+    logging.config.dictConfig({"version": 1, "disable_existing_loggers": True})
+
     ai = AIChat(console=False, model=MODEL, params=MODEL_PARAMS)
-    prompt = "Summarize https://openai.com/blog/new-embedding-models-and-api-updates ."
-    toolset = Toolset(logging.getLogger(), ai)
+    prompt = "Summarize https://openai.com/blog/new-embedding-models-and-api-updates"
+    logger = logging.getLogger(__name__)
+    toolset = Toolset(logger, ai)
     reply: Any = ai(prompt, tools=toolset.tools)
     print(reply["response"])
