@@ -7,6 +7,7 @@ import os
 # https://raw.githubusercontent.com/errbotio/errbot/master/errbot/config-template.py
 
 BACKEND = "Text"  # Errbot will start in text mode (console only mode) and will answer commands from there.
+BOT_ASYNC = True
 
 root_dir = os.path.abspath(os.path.dirname(__file__))
 
