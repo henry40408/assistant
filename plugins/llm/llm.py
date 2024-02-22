@@ -34,14 +34,14 @@ class LLMPlugin(BotPlugin):
         """Retrieve chat history."""
         history_key = self.build_history_key(msg)
         if history_key in self:
-            final_usage = 0
+            total_length = 0
             for m in self[history_key]:
                 cm = ChatMessage.model_validate(m)
                 icon = Emoji.user if cm.role == "user" else Emoji.robot
                 yield f"* {icon} {cm.content} {Emoji.clock} {cm.received_at}"
-                if cm.role == "assistant" and cm.total_length:
-                    final_usage = cm.total_length
-            yield f"current usage: {final_usage} token(s)"
+                if cm.total_length:
+                    total_length = cm.total_length
+            yield f"current usage: {total_length} token(s)"
         else:
             yield "*empty*"
 
