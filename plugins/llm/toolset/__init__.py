@@ -21,30 +21,51 @@ class Extracted(BaseModel):
 
 class Toolset:
     def __init__(
-        self, logger: Logger, ai: AIChat, *, api_key: Optional[str] = None
+        self,
+        logger: Logger,
+        ai: AIChat,
+        *,
+        api_key: Optional[str] = None,
+        session_id=None,
     ) -> None:
         self.log = logger
+        self.api_key = api_key
         self.ai = ai
-
-        sess = ai.get_session()
+        self.session = ai.get_session(session_id)  # type:ignore
         self.tool_ai = AIChat(
-            api_key=api_key,
+            api_key=self.api_key,
             console=False,
-            model=sess.model,  # use the same model
-            params=sess.params,  # use the same parameters
-            save_messages=False,  # epheremal
+            model=self.session.model,
+            params=self.session.params,
+            save_messages=False,
         )
+
+    def extract_from_messages(
+        self,
+        prompt: str,
+        query: str,
+        output_schema=None,
+    ):
+        messages = "\n".join([f"{m.role}: {m.content}" for m in self.session.messages])
+        prompt = f"""
+        {prompt}
+        QUERY: `{query}`
+        CONTEXT: ```
+        {messages}
+        ```
+        MENTIONED:
+        """
+        return self.tool_ai(prompt, output_schema=output_schema)
 
     def summarize_url(self, query: str) -> Dict[str, Any]:
         """Summarize webpage content with URL"""
 
         # Extract URL from the query
-        prompt = f"""
-        Extract URL from the text.
-        Text: <|{query}|>
-        URL:
-        """
-        extracted: Any = self.tool_ai(prompt, output_schema=Extracted)
+        extracted = self.extract_from_messages(
+            prompt="What's the actual URL does user mentioned in the query based on the context?",
+            query=query,
+            output_schema=Extracted,
+        )
         url = extracted["url"]
         self.log.debug(f"URL: {url}")
         if not url:
@@ -64,12 +85,11 @@ class Toolset:
 
         # Summarize webpage content
         prompt = f"""
-        Summarize the following text:
-        Text:
-        ###
+        Summarize the following text.
+        TEXT: ```
         {content}
-        ###
-        Summary:
+        ```
+        SUMMARY:
         """
         extracted: Any = self.tool_ai(prompt, output_schema=Extracted)
 
