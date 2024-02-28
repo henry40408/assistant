@@ -1,4 +1,5 @@
-from typing import Any, Generator, Mapping, Match
+import threading
+from typing import Any, Dict, Generator, Mapping, Match
 
 import emoji
 from errbot import BotPlugin, Message, botcmd, re_botcmd
@@ -15,6 +16,12 @@ class Emoji:
 
 class LLMPlugin(BotPlugin):
     """Interact with LLM."""
+
+    LOCK_TIMEOUT_IN_SECONDS = 10
+
+    def __init__(self, bot, name=None):
+        self.locks: Dict[str, threading.Lock] = {}
+        super().__init__(bot, name)
 
     def get_configuration_template(self) -> Mapping:
         return {
@@ -54,9 +61,12 @@ class LLMPlugin(BotPlugin):
         return "History successfully cleared."
 
     @re_botcmd(pattern=r"^\.(.+)$", prefixed=False)  # type:ignore
-    def chat(self, msg: Message, match: Match):
+    def chat(self, msg: Message, match: Match) -> Generator[str, None, None]:
         """Chat with LLM."""
+
         history_key = self.build_history_key(msg)
+        self.log.debug(f"history key {history_key}")
+
         api_key = self.config["OPENAI_API_KEY"]
         ai = AIChat(
             id=history_key,
@@ -66,10 +76,31 @@ class LLMPlugin(BotPlugin):
             params=MODEL_PARAMS,
         )
         toolset = Toolset(self.log, ai, api_key=api_key)
-        if history_key in self:
-            ai.sessions[history_key].messages = [
-                ChatMessage.model_validate(i) for i in self[history_key]
-            ]
-        reply: Any = ai(match[1], tools=toolset.tools)
-        yield reply["response"]
-        self[history_key] = ai.get_session(id=history_key).messages
+
+        self.locks[history_key] = self.locks.get(history_key, threading.Lock())
+
+        self.log.debug(f"try to acquire {history_key} to interact with LLM")
+        acquired = self.locks[history_key].acquire(
+            blocking=True,
+            timeout=self.LOCK_TIMEOUT_IN_SECONDS,
+        )
+
+        if acquired:
+            self.log.debug(
+                f"{history_key} acquired to interact with LLM for {self.LOCK_TIMEOUT_IN_SECONDS}s"
+            )
+            try:
+                with self.mutable(history_key, []) as messages:
+                    if history_key in self:
+                        ai.sessions[history_key].messages = [
+                            ChatMessage.model_validate(i)
+                            for i in messages  # type:ignore
+                        ]
+                    reply: Any = ai(match[1], tools=toolset.tools)
+                    yield reply["response"]
+                    messages[:] = ai.get_session(id=history_key).messages  # type:ignore
+            finally:
+                self.locks[history_key].release()
+                self.log.debug(f"{history_key} released to interact with LLM")
+        else:
+            yield f"cannot acquire resource to interact with LLM in {self.LOCK_TIMEOUT_IN_SECONDS}s"

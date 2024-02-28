@@ -16,7 +16,7 @@ BOT_EXTRA_PLUGIN_DIR = f"{root_dir}/plugins"
 BOT_EXTRA_BACKEND_DIR = f"{root_dir}/backend-plugins"
 
 BOT_LOG_FILE = f"{root_dir}/data/errbot.log"
-BOT_LOG_LEVEL = logging.INFO
+BOT_LOG_LEVEL = logging.DEBUG
 
 BOT_ADMINS = (
     "@CHANGE_ME",
